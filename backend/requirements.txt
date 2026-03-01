@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic-settings
+langchain
+langchain-openai
+langchain-core
+structlog
+httpx
+tenacity
+kafka-python>=2.0.2

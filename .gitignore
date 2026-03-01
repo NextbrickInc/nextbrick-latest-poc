@@ -1,0 +1,40 @@
+# ─── .gitignore ──────────────────────────────────────────────────────────────
+# Nextbrick Agentic AI POC — root .gitignore
+
+# ── Python / Backend ─────────────────────────────────────────────────────────
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/.pytest_cache/
+backend/venv/
+backend/.env
+backend/*.egg-info/
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+nextbrick-ai-assistant-main/node_modules/
+nextbrick-ai-assistant-main/dist/
+nextbrick-ai-assistant-main/.env
+nextbrick-ai-assistant-main/.env.local
+
+# ── OS / IDE ─────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Docker ─────────────────────────────────────────────────────────────────── 
+.dockerignore
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/

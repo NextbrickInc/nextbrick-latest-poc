@@ -1,0 +1,93 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# data-pipeline/docker-compose.kafka.yml
+#
+# Starts a self-contained Kafka broker (KRaft mode — no Zookeeper) and a
+# Spark consumer that reads from the chat.events topic.
+#
+# Usage:
+#   cd /path/to/dcx
+#   docker compose -f data-pipeline/docker-compose.kafka.yml up -d
+#
+# Kafka UI dashboard:
+#   http://localhost:9000  (Kafdrop)
+#
+# Stop everything:
+#   docker compose -f data-pipeline/docker-compose.kafka.yml down
+# ═══════════════════════════════════════════════════════════════════════════════
+
+version: "3.9"
+
+services:
+
+  # ── Kafka Broker (KRaft — single-node, no Zookeeper) ──────────────────────
+  kafka:
+    image: bitnami/kafka:3.6
+    container_name: dcx-kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"         # internal (used by producer inside compose network)
+      - "9094:9094"         # external (used by host-machine producer / consumer)
+    environment:
+      # KRaft mode — built-in Kafka raft, no Zookeeper
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_CFG_NUM_PARTITIONS=3
+      - KAFKA_CFG_DEFAULT_REPLICATION_FACTOR=1
+      # Pre-create the chat.events topic
+      - KAFKA_CFG_CREATE_TOPICS=chat.events:3:1
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --list --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── Kafdrop — Kafka Web UI ─────────────────────────────────────────────────
+  kafdrop:
+    image: obsidiandynamics/kafdrop:3.31.0
+    container_name: dcx-kafdrop
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: "kafka:9092"
+      JVM_OPTS: "-Xms32M -Xmx64M"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Spark Consumer ─────────────────────────────────────────────────────────
+  spark-consumer:
+    image: bitnami/spark:3.5
+    container_name: dcx-spark-consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC_CHAT_EVENTS=chat.events
+      - SPARK_OUTPUT_PATH=/app/output/chat_events
+      - SPARK_CHECKPOINT=/app/output/.checkpoints
+    volumes:
+      - ./consumer:/app/consumer
+      - spark-output:/app/output
+    working_dir: /app
+    command: >
+      spark-submit
+        --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0
+        consumer/spark_consumer.py
+    restart: unless-stopped
+
+volumes:
+  kafka-data:
+  spark-output:
