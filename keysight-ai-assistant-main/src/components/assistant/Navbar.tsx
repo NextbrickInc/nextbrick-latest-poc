@@ -1,9 +1,28 @@
 // ─── components/assistant/Navbar.tsx ─────────────────────────────────────────
 // Top sticky navigation bar — Keysight brand style
-import { ChevronDown, Cpu, Globe, ShoppingCart, User } from "lucide-react";
+import {
+  ChevronDown,
+  Cpu,
+  Globe,
+  ShoppingCart,
+  User,
+  Database,
+  Layers,
+  BookOpen,
+  Cloud,
+  FileText,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppSelector } from "@/store/hooks";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 const NAV_ITEMS = ["Products", "Solutions", "Learn", "Buy", "Support"];
 
@@ -54,6 +73,117 @@ const Navbar = () => {
             </Badge>
           )}
 
+          {/* Data source selector */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium md:inline-flex"
+              >
+                <Database className="h-3.5 w-3.5 text-primary" />
+                <span>Data Source</span>
+                <ChevronDown className="h-3 w-3 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[260px]">
+              <DropdownMenuLabel className="text-[11px]">
+                Connected data sources
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <Cloud className="mt-0.5 h-3.5 w-3.5 text-primary" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">Coveo</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Unified relevance platform for enterprise search.
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <Layers className="mt-0.5 h-3.5 w-3.5 text-orange-500" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">AEM DAM</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Adobe Experience Manager digital asset management.
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <FileText className="mt-0.5 h-3.5 w-3.5 text-blue-500" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">AEM Pages</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Experience Manager sites and documentation pages.
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <BookOpen className="mt-0.5 h-3.5 w-3.5 text-sky-600" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">Confluence</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Knowledge base articles and engineering notes.
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <Layers className="mt-0.5 h-3.5 w-3.5 text-indigo-500" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">Salesforce</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Cases, emails, KB, service notes, and service orders.
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <Database className="mt-0.5 h-3.5 w-3.5 text-emerald-500" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">PIM</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Product information management (specs, hierarchy, pricing).
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <BookOpen className="mt-0.5 h-3.5 w-3.5 text-purple-500" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">Skilljar LMS</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Training courses, labs, and certification content.
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <Database className="mt-0.5 h-3.5 w-3.5 text-red-500" />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">Oracle</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Parts, pricing, and sales order data.
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem className="flex items-start gap-2 py-2 text-xs">
+                <SnowflakeIcon />
+                <div className="flex flex-col">
+                  <span className="font-semibold text-foreground">Snowflake</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Enterprise data warehouse and analytics signals.
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button variant="outline" size="sm" className="rounded-full px-4">
             Contact Us
           </Button>
@@ -71,5 +201,11 @@ const Navbar = () => {
     </header>
   );
 };
+
+const SnowflakeIcon = () => (
+  <span className="mt-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-sky-500/10 text-[10px] text-sky-500">
+    ✻
+  </span>
+);
 
 export default Navbar;

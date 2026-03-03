@@ -5,20 +5,59 @@
 import { useRef, useEffect, useState } from "react";
 import {
   Bot, Send, Sparkles, User, Wrench, AlertCircle,
-  ChevronRight, Clock, Zap, Brain
+  ChevronRight, Clock, Zap, Brain, Copy, ChevronDown,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { MarkdownMessage } from "@/components/assistant/MarkdownMessage";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   sendMessage,
+  mergePendingResponse,
   selectActiveMessages,
   selectChatStatus,
   selectChatError,
+  selectPendingFulfill,
   clearError,
   selectActiveSessionId,
 } from "@/store/slices/chatSlice";
+import { setModelName } from "@/store/slices/modelSlice";
+
+type ModelOption = {
+  id: string;
+  label: string;
+  group: "onprem" | "cloud";
+};
+
+const MODEL_OPTIONS: ModelOption[] = [
+  // On‑prem / Ollama first
+  { id: "qwen3-coder:480b-cloud", label: "Qwen3 Coder 480B (on‑prem)", group: "onprem" },
+  { id: "mistral-nemo:12b", label: "Mistral Nemo 12B", group: "onprem" },
+  { id: "qwen2.5:14b-instruct-q4_k_m", label: "Qwen2.5 14B Instruct (Q4_K_M)", group: "onprem" },
+  { id: "bge-m3:latest", label: "BGE-M3 Embeddings", group: "onprem" },
+  { id: "mixtral:8x7b-instruct-v0.1-q4_K_M", label: "Mixtral 8×7B Instruct (Q4_K_M)", group: "onprem" },
+  { id: "qwen2.5:32b-instruct-q4_k_m", label: "Qwen2.5 32B Instruct (Q4_K_M)", group: "onprem" },
+  { id: "gpt-oss:20b-cloud", label: "GPT‑OSS 20B (on‑prem)", group: "onprem" },
+  { id: "gpt-oss:120b-cloud", label: "GPT‑OSS 120B (on‑prem)", group: "onprem" },
+  { id: "ministral-3:8b-instruct-2512-q4_K_M", label: "Ministral‑3 8B Instruct (Q4_K_M)", group: "onprem" },
+
+  // Cloud / hosted models
+  { id: "gpt-5.2", label: "ChatGPT 5.2 (latest)", group: "cloud" },
+  { id: "gemini-3", label: "Gemini 3 (latest)", group: "cloud" },
+  { id: "claude-3.6-sonnet", label: "Claude Sonnet 4.6", group: "cloud" },
+  { id: "claude-3.6-opus", label: "Claude Opus 4.6", group: "cloud" },
+  { id: "grok-4", label: "Grok 4", group: "cloud" },
+];
 
 // ── Suggested prompts ─────────────────────────────────────────────────────────
 const SUGGESTED_PROMPTS = [
@@ -55,13 +94,26 @@ export default function ChatPanel() {
   const messages = useAppSelector(selectActiveMessages);
   const chatStatus = useAppSelector(selectChatStatus);
   const chatError = useAppSelector(selectChatError);
+  const pendingFulfill = useAppSelector(selectPendingFulfill);
   const modelName = useAppSelector((s) => s.model.name);
   const activeId = useAppSelector(selectActiveSessionId);
 
   const [inputValue, setInputValue] = useState("");
+  const [selectedModelProfile, setSelectedModelProfile] = useState<string>(
+    MODEL_OPTIONS[0]?.id ?? "gpt-oss:120b-cloud",
+  );
+  const [selectedSource, setSelectedSource] = useState<string>("auto");
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isLoading = chatStatus === "sending";
+
+  // Apply delayed response after minimum 5s thinking
+  useEffect(() => {
+    if (!pendingFulfill) return;
+    const delay = Math.max(0, pendingFulfill.mergeAt - Date.now());
+    const t = setTimeout(() => dispatch(mergePendingResponse()), delay);
+    return () => clearTimeout(t);
+  }, [pendingFulfill, dispatch]);
 
   // Auto-scroll INSIDE the messages box only — never moves the page
   useEffect(() => {
@@ -88,7 +140,14 @@ export default function ChatPanel() {
     const text = inputValue.trim();
     if (!text || isLoading) return;
     setInputValue("");
-    dispatch(sendMessage({ sessionId: activeId, message: text }));
+    dispatch(
+      sendMessage({
+        sessionId: activeId,
+        message: text,
+        modelProfile: selectedModelProfile,
+        dataSource: selectedSource,
+      }),
+    );
   };
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -100,7 +159,14 @@ export default function ChatPanel() {
 
   // Show only the last ~20 messages to keep scroll snappy
   const visibleMessages = messages.slice(-20);
+  const lastUserMessage = [...visibleMessages].reverse().find((m) => m.role === "user");
   const isEmpty = visibleMessages.length <= 1; // only greeting
+  const pendingThinkingSteps: string[] =
+    (pendingFulfill?.payload.response.thinking_steps as string[] | undefined) || [];
+  const currentPendingStep =
+    pendingThinkingSteps.length > 0 ? pendingThinkingSteps[pendingThinkingSteps.length - 1] : null;
+
+  const currentModel = MODEL_OPTIONS.find((m) => m.id === selectedModelProfile) ?? MODEL_OPTIONS[0];
 
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-card overflow-hidden shadow-lg min-w-0">
@@ -110,10 +176,114 @@ export default function ChatPanel() {
           <img src="/image.png" alt="Keysight AI" className="h-10 w-10 object-contain drop-shadow-sm" />
           <div>
             <p className="text-sm font-bold text-foreground leading-none">Keysight AI Assistant</p>
-            <p className="mt-0.5 text-[10px] text-muted-foreground flex items-center gap-1">
-              <Brain className="h-2.5 w-2.5 text-primary" />
-              {modelName || "Model not configured"} · Plan → Retrieve → Act
-            </p>
+            <div className="mt-0.5 flex flex-col gap-0.5">
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Brain className="h-2.5 w-2.5 text-primary" />
+                {modelName || "Model not configured"} · Plan → Retrieve → Act
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground">Model:</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 py-0 text-[10px] gap-1"
+                      >
+                        {currentModel?.label ?? "Select model"}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="min-w-[220px]">
+                      <DropdownMenuLabel className="text-[11px]">On‑prem / Ollama</DropdownMenuLabel>
+                      <DropdownMenuGroup>
+                        {MODEL_OPTIONS.filter((m) => m.group === "onprem").map((m) => (
+                          <DropdownMenuItem
+                            key={m.id}
+                            className="text-[11px]"
+                            onClick={() => {
+                              setSelectedModelProfile(m.id);
+                              dispatch(setModelName(m.label));
+                            }}
+                          >
+                            {m.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-[11px]">Cloud</DropdownMenuLabel>
+                      <DropdownMenuGroup>
+                        {MODEL_OPTIONS.filter((m) => m.group === "cloud").map((m) => (
+                          <DropdownMenuItem
+                            key={m.id}
+                            className="text-[11px]"
+                            onClick={() => {
+                              setSelectedModelProfile(m.id);
+                              dispatch(setModelName(m.label));
+                            }}
+                          >
+                            {m.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground">Data source:</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 py-0 text-[10px] gap-1"
+                      >
+                        {selectedSource === "auto"
+                          ? "Auto"
+                          : selectedSource}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="min-w-[260px]">
+                      <DropdownMenuLabel className="text-[11px]">Routing</DropdownMenuLabel>
+                      <DropdownMenuItem
+                        className="text-[11px]"
+                        onClick={() => setSelectedSource("auto")}
+                      >
+                        Auto (let assistant choose)
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-[11px]">Data sources</DropdownMenuLabel>
+                      {[
+                        { id: "coveo", label: "Coveo" },
+                        { id: "aem_dam", label: "AEM DAM" },
+                        { id: "aem_pages", label: "AEM Pages" },
+                        { id: "confluence", label: "Confluence" },
+                        {
+                          id: "salesforce",
+                          label: "Salesforce (Cases, Emails, KB, Service Notes, Service Orders)",
+                        },
+                        { id: "pim", label: "PIM" },
+                        { id: "skilljar_lms", label: "Skilljar LMS" },
+                        { id: "oracle", label: "Oracle (Parts and Sales data)" },
+                        { id: "snowflake", label: "Snowflake (Enterprise Data Warehouse)" },
+                      ].map((src) => (
+                        <DropdownMenuItem
+                          key={src.id}
+                          className="text-[11px]"
+                          onClick={() => setSelectedSource(src.id)}
+                        >
+                          {src.label}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -200,12 +370,46 @@ export default function ChatPanel() {
                         : "bg-secondary text-foreground rounded-tl-sm"
                     }`}
                 >
-                  {msg.role === "assistant" ? (
-                    <MarkdownMessage content={msg.text} />
-                  ) : (
-                    msg.text
-                  )}
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      {msg.role === "assistant" ? (
+                        <MarkdownMessage content={msg.text} />
+                      ) : (
+                        msg.text
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (navigator?.clipboard && msg.text) {
+                          navigator.clipboard.writeText(msg.text).catch(() => undefined);
+                        }
+                      }}
+                      className="ml-1 inline-flex items-center justify-center rounded-md bg-background/40 hover:bg-background/80 border border-border/50 text-[10px] px-1.5 py-0.5 text-muted-foreground shrink-0"
+                      aria-label={msg.role === "user" ? "Copy prompt" : "Copy response"}
+                    >
+                      <Copy className="h-3 w-3 mr-1" />
+                      Copy
+                    </button>
+                  </div>
                 </div>
+
+                {/* Thinking / reasoning steps */}
+                {msg.role === "assistant" && msg.thinkingSteps && msg.thinkingSteps.length > 0 && (
+                  <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-left">
+                    <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-medium text-muted-foreground">
+                      <Brain className="h-3 w-3" />
+                      Reasoning steps
+                    </div>
+                    <ul className="space-y-0.5 text-[11px] text-muted-foreground font-mono">
+                      {msg.thinkingSteps.map((line, i) => (
+                        <li key={i} className={line.startsWith("Calling tool") ? "text-primary/90 font-medium" : ""}>
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Tool calls — one badge per unique tool */}
                 {msg.tool_calls && msg.tool_calls.length > 0 && (
@@ -238,12 +442,23 @@ export default function ChatPanel() {
                   </div>
                 )}
 
-                {/* Meta row */}
-                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                {/* Meta row — latency, tokens in/out, model */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
                   {msg.latencyMs != null && (
                     <span className="flex items-center gap-0.5">
                       <Clock className="h-2.5 w-2.5" />
-                      {msg.latencyMs}ms
+                      {msg.latencyMs >= 1000
+                        ? `${(msg.latencyMs / 1000).toFixed(0)} seconds`
+                        : `${msg.latencyMs}ms`}
+                    </span>
+                  )}
+                  {(msg.inputTokens != null || msg.outputTokens != null) && (
+                    <span className="flex items-center gap-0.5">
+                      {msg.inputTokens != null && msg.outputTokens != null
+                        ? `${(msg.inputTokens ?? 0).toLocaleString()} tokens in / ${(msg.outputTokens ?? 0).toLocaleString()} tokens out`
+                        : msg.inputTokens != null
+                          ? `${(msg.inputTokens ?? 0).toLocaleString()} tokens in`
+                          : `${(msg.outputTokens ?? 0).toLocaleString()} tokens out`}
                     </span>
                   )}
                   {msg.model && (
@@ -258,20 +473,48 @@ export default function ChatPanel() {
           );
         })}
 
-        {/* Typing indicator */}
+        {/* In-progress reasoning placeholder while waiting for response */}
         {isLoading && (
-          <div className="flex gap-3">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary shadow-md shadow-primary/20">
-              <Bot className="h-3.5 w-3.5 text-primary-foreground" />
+          <div className="flex gap-3 flex-row mt-1">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary shadow-md shadow-primary/20 text-primary-foreground">
+              <Bot className="h-3.5 w-3.5" />
             </div>
-            <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm bg-secondary px-4 py-3">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
+            <div className="flex min-w-0 max-w-[95%] flex-col gap-1.5 items-start">
+              <div className="min-w-0 rounded-2xl rounded-tl-sm px-3.5 py-2.5 bg-secondary text-foreground text-sm">
+                <div className="flex items-center gap-1.5 mb-1 text-[10px] font-medium text-muted-foreground">
+                  <Brain className="h-3 w-3" />
+                  Reasoning (in progress)
+                </div>
+                {currentPendingStep ? (
+                  <ul className="space-y-0.5 text-[11px] text-muted-foreground font-mono">
+                    {lastUserMessage && (
+                      <li className="text-foreground/80">
+                        {`User query: "${lastUserMessage.text.slice(0, 80)}${
+                          lastUserMessage.text.length > 80 ? "…" : ""
+                        }"`}
+                      </li>
+                    )}
+                    <li className="text-primary/90 font-semibold">
+                      {currentPendingStep}
+                    </li>
+                  </ul>
+                ) : (
+                  <ul className="space-y-0.5 text-[11px] text-muted-foreground font-mono">
+                    {lastUserMessage && (
+                      <li>{`User query: "${lastUserMessage.text.slice(0, 80)}${
+                        lastUserMessage.text.length > 80 ? "…" : ""
+                      }"`}</li>
+                    )}
+                    <li>Identifying the most relevant data source</li>
+                    <li>Selecting appropriate tools (Salesforce / Elasticsearch / others)</li>
+                    <li>Preparing search/query against internal systems</li>
+                    <li>Waiting for tool responses…</li>
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
         )}
-
 
       </div>
 

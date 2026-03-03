@@ -21,6 +21,14 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4096, description="User's message")
     history: List[MessageItem] = Field(default_factory=list, description="Previous turns (last N)")
     session_id: Optional[str] = Field(None, description="Optional session identifier")
+    model_profile: Optional[str] = Field(
+        default=None,
+        description="Optional client-selected model profile (e.g. 'fast', 'quality').",
+    )
+    data_source: Optional[str] = Field(
+        default=None,
+        description="Optional preferred data source (e.g. 'auto', 'salesforce', 'elasticsearch', 'aem', 'confluence', 'email', 'snowflake').",
+    )
 
 
 # ── Outbound ──────────────────────────────────────────────────────────────────
@@ -37,7 +45,10 @@ class ChatResponse(BaseModel):
     reply: str
     citations: List[str] = Field(default_factory=list)
     tool_calls: List[ToolCallResult] = Field(default_factory=list)
+    thinking_steps: List[str] = Field(default_factory=list, description="Reasoning steps for UI (tool calls, search strategy)")
     latency_ms: Optional[int] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
     model: str
     session_id: Optional[str] = None
 

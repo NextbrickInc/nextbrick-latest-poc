@@ -1,13 +1,13 @@
-# Elasticsearch + Ollama embeddings (bge-m3:latest) — next_elastic_test1
+# Elasticsearch + Ollama embeddings (bge-m3:latest) — next_elastic_test3
 
-This doc describes the **standalone** Elasticsearch flow that uses **Ollama** for embeddings (model `bge-m3:latest`) and the index **next_elastic_test1**. Use it to test retrieval, then integrate the same tools into the agentic flow.
+This doc describes the **standalone** Elasticsearch flow that uses **Ollama** for embeddings (model `bge-m3:latest`) and the index **next_elastic_test3**. Use it to test retrieval, then integrate the same tools into the agentic flow.
 
 ---
 
 ## Overview
 
 - **Embedding model:** `bge-m3:latest` (served by Ollama)
-- **Index name:** `next_elastic_test1` (configurable via `ES_OLLAMA_INDEX`)
+- **Index name:** `next_elastic_test3` (configurable via `ES_OLLAMA_INDEX`)
 - **Module:** `app.tools.elasticsearch_ollama_tool`
 - **LangChain:** `ElasticsearchStore` + `OllamaEmbeddings`
 
@@ -40,7 +40,7 @@ ES_PASSWORD=changeme
 ONPREM_MODEL_URL=http://localhost:11434
 
 # Index and embedding model for this flow
-ES_OLLAMA_INDEX=next_elastic_test1
+ES_OLLAMA_INDEX=next_elastic_test3
 OLLAMA_EMBEDDING_MODEL=bge-m3:latest
 ```
 
@@ -50,8 +50,8 @@ OLLAMA_EMBEDDING_MODEL=bge-m3:latest
 
 | Tool | Description |
 |------|-------------|
-| `elasticsearch_ollama_semantic_search(query, top_k=5)` | Search `next_elastic_test1` with Ollama BGE-M3 embeddings; returns list of `{content, source, title, retrieval_method}`. |
-| `elasticsearch_ollama_ingest_document(title, content, source="manual")` | Chunk and index a document into `next_elastic_test1`; returns `{indexed, chunks_stored, index, ...}`. |
+| `elasticsearch_ollama_semantic_search(query, top_k=5)` | Search `next_elastic_test3` with Ollama BGE-M3 embeddings; returns list of `{content, source, title, retrieval_method}`. |
+| `elasticsearch_ollama_ingest_document(title, content, source="manual")` | Chunk and index a document into `next_elastic_test3`; returns `{indexed, chunks_stored, index, ...}`. |
 
 Both live in `app.tools.elasticsearch_ollama_tool`. They are **not** yet registered in `ALL_TOOLS`; add them when you integrate with the agent.
 
@@ -71,7 +71,7 @@ This script:
 
 - Finds all **PDF** and **.md** files in `backend/docs/` (e.g. `U1610A_U1620A Handheld Digital Oscilloscope (1).pdf`)
 - Chunks them (500 chars, 50 overlap) and embeds with **Ollama bge-m3:latest**
-- Writes vectors into the **next_elastic_test1** index
+- Writes vectors into the **next_elastic_test3** index
 
 Ensure **Elasticsearch** and **Ollama** (with `bge-m3:latest` pulled) are running before ingesting.
 
@@ -106,7 +106,7 @@ Ensure **Elasticsearch** and **Ollama** (with `bge-m3:latest` pulled) are runnin
    ```
 
 3. **Verify index** in Elasticsearch:
-   - Index name: `next_elastic_test1`
+   - Index name: `next_elastic_test3`
    - Documents are vector + metadata; search is kNN on the Ollama BGE-M3 embeddings.
 
 ---
@@ -132,6 +132,6 @@ To use this Elasticsearch path in the ReAct agent:
 
 2. Optionally **replace** the existing `elasticsearch_semantic_search` / `elasticsearch_ingest_document` with these Ollama-backed versions so the agent uses `next_elastic_test1` and `bge-m3:latest` from Ollama.
 
-3. Ensure **Ollama** and **Elasticsearch** are running and `.env` has `ES_OLLAMA_INDEX=next_elastic_test1` and `OLLAMA_EMBEDDING_MODEL=bge-m3:latest`.
+3. Ensure **Ollama** and **Elasticsearch** are running and `.env` has `ES_OLLAMA_INDEX=next_elastic_test3` and `OLLAMA_EMBEDDING_MODEL=bge-m3:latest`.
 
 After that, the agent will call the Ollama-based Elasticsearch tools like any other tool (retrieval from `next_elastic_test1` and ingest into the same index).

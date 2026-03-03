@@ -1,9 +1,9 @@
 # backend/app/tools/elasticsearch_ollama_tool.py
 # ─────────────────────────────────────────────────────────────────────────────
-# Elasticsearch + Ollama embeddings (bge-m3:latest) — index: next_elastic_test1
+# Elasticsearch + Ollama embeddings (bge-m3:latest) — index: next_elastic_test3
 #
 # Standalone module for testing: uses Ollama for embeddings instead of HuggingFace.
-# Index name: next_elastic_test1 (configurable via ES_OLLAMA_INDEX).
+# Index name: next_elastic_test3 (configurable via ES_OLLAMA_INDEX).
 # Later: wire these tools into the agentic flow as the Elasticsearch tool.
 #
 # Prerequisites:
@@ -15,7 +15,7 @@
 #   ES_HOST              = http://localhost:9200
 #   ES_USERNAME          = elastic
 #   ES_PASSWORD          = changeme
-#   ES_OLLAMA_INDEX      = next_elastic_test1   ← index name
+#   ES_OLLAMA_INDEX      = next_elastic_test3   ← index name
 #   OLLAMA_EMBEDDING_MODEL = bge-m3:latest
 #   ONPREM_MODEL_URL     = http://localhost:11434   ← Ollama base URL for embeddings
 # ─────────────────────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ def _get_ollama_embeddings():
 
 def _get_ollama_vector_store():
     """
-    Return a singleton ElasticsearchStore for index next_elastic_test1,
+    Return a singleton ElasticsearchStore for index next_elastic_test3,
     backed by Ollama bge-m3:latest embeddings.
     """
     global _ollama_vector_store
@@ -85,7 +85,7 @@ def _get_ollama_vector_store():
             es_kwargs["basic_auth"] = (settings.es_username, settings.es_password)
 
         es_client = Elasticsearch(**es_kwargs)
-        index_name = getattr(settings, "es_ollama_index", "next_elastic_test1")
+        index_name = getattr(settings, "es_ollama_index", "next_elastic_test3")
 
         _ollama_vector_store = ElasticsearchStore(
             client=es_client,
@@ -107,7 +107,7 @@ def _get_ollama_vector_store():
 
 def get_ollama_vector_store():
     """
-    Public getter for the next_elastic_test1 vector store (Ollama BGE-M3).
+    Public getter for the next_elastic_test3 vector store (Ollama BGE-M3).
     Used by ingest scripts to add documents from backend/docs.
     """
     return _get_ollama_vector_store()
@@ -115,7 +115,7 @@ def get_ollama_vector_store():
 
 def _seed_ollama_if_empty(store, index_name: str) -> None:
     """
-    Ingest sample documents into next_elastic_test1 on first use.
+    Ingest sample documents into next_elastic_test3 on first use.
     Uses stable IDs so re-running does not duplicate.
     """
     from langchain_core.documents import Document
@@ -162,7 +162,7 @@ def _seed_ollama_if_empty(store, index_name: str) -> None:
 @tool
 def elasticsearch_ollama_semantic_search(query: str, top_k: int = 5) -> list:
     """
-    Search the next_elastic_test1 index using Ollama bge-m3:latest embeddings and kNN.
+    Search the next_elastic_test3 index using Ollama bge-m3:latest embeddings and kNN.
     Use for questions about products, policies, onboarding, calibration, or support.
     Returns top matching passages with source and title.
     """
@@ -182,7 +182,7 @@ def elasticsearch_ollama_semantic_search(query: str, top_k: int = 5) -> list:
                 "content": doc.page_content,
                 "source": doc.metadata.get("source", "unknown"),
                 "title": doc.metadata.get("title", ""),
-                "retrieval_method": "Ollama BGE-M3 kNN (next_elastic_test1)",
+                "retrieval_method": "Ollama BGE-M3 kNN (next_elastic_test3)",
             }
             for doc in docs
         ]
@@ -194,7 +194,7 @@ def elasticsearch_ollama_semantic_search(query: str, top_k: int = 5) -> list:
 @tool
 def elasticsearch_ollama_ingest_document(title: str, content: str, source: str = "manual") -> dict:
     """
-    Index a document into the next_elastic_test1 index using Ollama bge-m3:latest.
+    Index a document into the next_elastic_test3 index using Ollama bge-m3:latest.
     Use when adding a new knowledge article, guide, or FAQ. Returns chunk count.
     """
     log.info("elasticsearch_ollama.ingest", title=title, source=source)
@@ -214,7 +214,7 @@ def elasticsearch_ollama_ingest_document(title: str, content: str, source: str =
         store.add_documents(chunks)
         log.info("elasticsearch_ollama.ingest.done", title=title, chunks=len(chunks))
         from app.config import settings
-        index_name = getattr(settings, "es_ollama_index", "next_elastic_test1")
+        index_name = getattr(settings, "es_ollama_index", "next_elastic_test3")
         return {
             "indexed": True,
             "title": title,

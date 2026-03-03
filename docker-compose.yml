@@ -21,7 +21,7 @@ services:
       - ./backend/.env
     ports:
       - "8000:8000"
-      - "80:80"
+      - "8080:80"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 15s

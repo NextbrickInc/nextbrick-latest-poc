@@ -1,215 +1,318 @@
 # backend/app/tools/elasticsearch_tool.py
 # ─────────────────────────────────────────────────────────────────────────────
-# Elasticsearch LangChain tools — BGE-M3 dense embeddings + kNN retrieval.
-#
-# Uses BAAI/bge-m3 as the local embedding model:
-#   - Runs entirely on-device (no API key needed)
-#   - Multilingual: 100+ languages
-#   - 1024-dim dense vectors stored in ES kNN index
-#   - Model is downloaded from HuggingFace on first boot (~570 MB)
-#
-# Config (backend/.env):
-#   ES_HOST         = http://localhost:9200
-#   ES_USERNAME     = elastic
-#   ES_PASSWORD     = changeme
-#   ES_VECTOR_INDEX = keysight-vectors
-#   EMBEDDING_MODEL = BAAI/bge-m3       ← default
+# Fixed: queries next_elastic_test1 (real case/order/product data) using
+# both keyword search and semantic search via BGE-M3 embeddings.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
+import re
 import structlog
 from typing import Optional
 from langchain_core.tools import tool
 
 log = structlog.get_logger(__name__)
 
-# ── Singletons ────────────────────────────────────────────────────────────────
-_embeddings = None   # type: Optional[object]
-_vector_store = None  # type: Optional[object]
+_embeddings = None
+_vector_store = None
 
 
 def _get_embeddings():
-    """
-    Return a singleton BGE-M3 embedding model.
-    Downloaded from HuggingFace on first call (~570 MB), cached locally after that.
-    """
     global _embeddings
     if _embeddings is not None:
         return _embeddings
-
     from app.config import settings
-
     model_name = getattr(settings, "embedding_model", "BAAI/bge-m3")
-
     try:
         from langchain_huggingface import HuggingFaceEmbeddings
-
         _embeddings = HuggingFaceEmbeddings(
             model_name=model_name,
-            model_kwargs={"device": "cpu"},          # switch to "cuda" if GPU available
-            encode_kwargs={"normalize_embeddings": True},  # cosine similarity
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
         )
         log.info("bge_m3.embedder_ready", model=model_name)
-
     except Exception as e:
-        log.error("bge_m3.embedder_failed", model=model_name, error=str(e))
+        log.error("bge_m3.embedder_failed", error=str(e))
         _embeddings = None
-
     return _embeddings
 
 
+def _get_es_client():
+    from app.config import settings
+    from elasticsearch import Elasticsearch
+    kwargs = {"hosts": [settings.es_host]}
+    if settings.es_username and settings.es_password:
+        kwargs["basic_auth"] = (settings.es_username, settings.es_password)
+    return Elasticsearch(**kwargs)
+
+
 def _get_vector_store():
-    """
-    Return a singleton ElasticsearchStore backed by BGE-M3 dense vectors.
-    Uses kNN approximate nearest-neighbour search for fast retrieval.
-    """
     global _vector_store
     if _vector_store is not None:
         return _vector_store
-
     from app.config import settings
-
     embeddings = _get_embeddings()
     if embeddings is None:
-        log.error("elasticsearch_tool.store_skip", reason="BGE-M3 embedder unavailable")
         return None
-
     try:
         from langchain_elasticsearch import ElasticsearchStore
-        from elasticsearch import Elasticsearch
-
-        es_kwargs: dict = {"hosts": [settings.es_host]}
-        if settings.es_username and settings.es_password:
-            es_kwargs["basic_auth"] = (settings.es_username, settings.es_password)
-
-        es_client = Elasticsearch(**es_kwargs)
-
+        es_client = _get_es_client()
         _vector_store = ElasticsearchStore(
             client=es_client,
             index_name=settings.es_vector_index,
             embedding=embeddings,
         )
-        log.info(
-            "elasticsearch_tool.store_ready",
-            strategy="BGE-M3 dense kNN",
-            host=settings.es_host,
-            index=settings.es_vector_index,
-        )
-        _seed_if_empty(_vector_store)
-
+        log.info("elasticsearch_tool.vector_store_ready", index=settings.es_vector_index)
     except Exception as e:
-        log.error("elasticsearch_tool.store_init_failed", error=str(e))
+        log.error("elasticsearch_tool.vector_store_failed", error=str(e))
         _vector_store = None
-
     return _vector_store
 
 
-def _seed_if_empty(store) -> None:
-    """
-    Ingest sample documents on first boot so the index is never empty.
-    Uses stable IDs — re-running is safe (no duplicates).
-    """
-    from langchain_core.documents import Document
+def _extract_id_tokens(query: str) -> list[str]:
+    """Extract probable ID tokens (orders, cases, serials, certs) from free text."""
+    if not query:
+        return []
+    tokens = re.findall(r"[A-Za-z0-9\\-]+", query)
+    ids: list[str] = []
+    for t in tokens:
+        if re.fullmatch(r"\\d{5,}", t):  # pure numbers like 600756, 4047199, 300655472
+            ids.append(t)
+        elif any(ch.isdigit() for ch in t) and len(t) >= 5:
+            ids.append(t)
+    return ids
 
-    seed_docs = [
-        Document(
-            page_content="IoT Sensor v3 installation requires 24V DC power and RS-485 wiring. "
-                         "Calibration must be performed with NextCal v2 within 72 hours of install. "
-                         "Supports Modbus RTU and MQTT protocols.",
-            metadata={"source": "product-manual", "title": "IoT Sensor v3 Manual"},
-        ),
-        Document(
-            page_content="Customer onboarding takes 5-7 business days: account setup, "
-                         "license activation, admin training, go-live sign-off with the CS team.",
-            metadata={"source": "confluence", "title": "Customer Onboarding Process"},
-        ),
-        Document(
-            page_content="Calibration certificates are issued annually. "
-                         "Log into the Keysight portal → Assets → Calibration → Request Certificate. "
-                         "PDF delivered by email within 3 business days.",
-            metadata={"source": "confluence", "title": "Calibration Certificate FAQ"},
-        ),
-        Document(
-            page_content="Support SLA: P1 Critical 2-hour response, P2 High 8-hour, "
-                         "P3 Medium 2 business days, P4 Low 5 business days.",
-            metadata={"source": "support-policy", "title": "SLA Policy"},
-        ),
-        Document(
-            page_content="APAC regional pricing includes a 5% surcharge. "
-                         "Volume discounts: 10 units 5%, 50 units 12%, 100+ units 18%. "
-                         "Discounts above 25% require Sales VP approval.",
-            metadata={"source": "pricing-guide", "title": "Regional Pricing FY2026"},
-        ),
-    ]
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+
+@tool
+def elasticsearch_keyword_search(query: str, top_k: int = 5) -> list:
+    """
+    Search real Keysight case, order, asset, and product data using an ID-aware strategy.
+
+    - For queries containing order/case/serial/certificate numbers (e.g. "600756 give me case status"),
+      first extract ID tokens and run exact term queries on ORDER__C, CASENUMBER,
+      SERIAL_NUMBER__C, and CERTIFICATE_NO__C in the `next_elastic_test1` index.
+    - If no exact ID match is found, fall back to a broader multi_match keyword search
+      across key fields (ORDER__C, CASENUMBER, SERIAL_NUMBER__C, MODEL_NUMBER__C, etc.).
+    Returns one dict per Elasticsearch document with the most relevant fields populated.
+    """
+    log.info("elasticsearch.keyword_search", query=query)
     try:
-        ids = [f"seed-bge-{i+1}" for i in range(len(seed_docs))]
-        store.add_documents(seed_docs, ids=ids)
-        log.info("elasticsearch_tool.seed_docs_ingested", count=len(seed_docs))
+        from app.config import settings
+        es = _get_es_client()
+
+        # Use the main data index
+        data_index = getattr(settings, "es_data_index", "next_elastic_test1")
+
+        # ── Step 1: Try exact ID-based lookup ─────────────────────────────────
+        id_tokens = _extract_id_tokens(query)
+        hits = []
+        if id_tokens:
+            should_terms = []
+            for token in id_tokens:
+                # For numeric IDs, also search zero-padded variants (e.g. case 600756 → CASENUMBER 00600756)
+                variants = {token}
+                if token.isdigit():
+                    try:
+                        n = int(token)
+                        # Common lengths: 6-digit case → 8-digit stored; keep raw and zero-padded to 8
+                        variants.add(str(n).zfill(8))
+                        # Also 7-digit just in case
+                        variants.add(str(n).zfill(7))
+                    except ValueError:
+                        pass
+                for v in variants:
+                    should_terms.extend(
+                        [
+                            {"term": {"ORDER__C": v}},
+                            {"term": {"CASENUMBER": v}},
+                            {"term": {"SERIAL_NUMBER__C": v}},
+                            {"term": {"CERTIFICATE_NO__C": v}},
+                        ]
+                    )
+            id_body = {
+                "size": top_k,
+                "query": {
+                    "bool": {
+                        "should": should_terms,
+                        "minimum_should_match": 1,
+                    }
+                },
+            }
+            res_id = es.search(index=data_index, body=id_body)
+            hits = res_id["hits"]["hits"]
+
+        # ── Step 2: Fallback to broader keyword search ────────────────────────
+        if not hits:
+            body = {
+                "size": top_k,
+                "query": {
+                    "multi_match": {
+                        "query": query,
+                        "fields": [
+                            "ORDER__C^5",
+                            "CASENUMBER^5",
+                            "SERIAL_NUMBER__C^5",
+                            "CERTIFICATE_NO__C^5",
+                            "MODEL_NUMBER__C^4",
+                            "TITLE^3",
+                            "PRODUCT_TITLE^3",
+                            "SUBJECT^3",
+                            "ACCOUNT_NAME_TEXT_ONLY__C^2",
+                            "DESCRIPTION",
+                            "CASE_RESOLUTION__C",
+                            "STATUS",
+                            "TYPE",
+                        ],
+                        "type": "best_fields",
+                    }
+                },
+            }
+
+            res_kw = es.search(index=data_index, body=body)
+            hits = res_kw["hits"]["hits"]
+
+        if not hits:
+            return [{"message": f"No records found for: {query}", "query": query}]
+
+        results = []
+        for hit in hits:
+            src = hit["_source"]
+            record = {"_score": hit["_score"], "_id": hit["_id"]}
+            for f in [
+                "CASENUMBER",
+                "ORDER__C",
+                "STATUS",
+                "TYPE",
+                "PRIORITY",
+                "SERIAL_NUMBER__C",
+                "MODEL_NUMBER__C",
+                "CERTIFICATE_NO__C",
+                "ACCOUNT_NAME_TEXT_ONLY__C",
+                "ACCOUNT_MANAGER__C",
+                "CONTACTEMAIL",
+                "CONTACT_EMAIL__C",
+                "CONTACTPHONE",
+                "CONTACT_PHONE__C",
+                "CONTACTMOBILE",
+                "REGION__C",
+                "CASE_ACCOUNT_REGION__C",
+                "SUBJECT",
+                "DESCRIPTION",
+                "CASE_RESOLUTION__C",
+                "CLOSEDDATE",
+                "CREATEDDATE",
+                "ISCLOSED",
+                "SLA_MET__C",
+                "ORDER_AMOUNT_USD__C",
+                "PURCHASE_ORDER__C",
+                "QUOTE__C",
+                "TITLE",
+                "PRODUCT_TITLE",
+                "PRODUCT_DESCRIPTION",
+                "AEM_PROD_DESC",
+                "DOC_TYPE",
+                "ADDRESSDETAILS__C",
+                "BUSINESS_GROUP__C",
+                "CASE_CHANNEL__C",
+                "FE_NAME__C",
+                "CONTACT_NAME_TEXT_ONLY__C",
+            ]:
+                val = src.get(f)
+                if val and str(val).strip():
+                    record[f] = val
+            results.append(record)
+
+        return results
+
     except Exception as e:
-        log.debug("elasticsearch_tool.seed_skip", reason=str(e))
+        log.error("elasticsearch.keyword_search.error", error=str(e))
+        return [{"error": str(e), "query": query}]
 
-
-# ── LangChain Tools ────────────────────────────────────────────────────────────
 
 @tool
 def elasticsearch_semantic_search(query: str, top_k: int = 5) -> list:
     """
-    Search indexed documents using BGE-M3 semantic embeddings and kNN retrieval.
-    BGE-M3 understands meaning, synonyms, and cross-language queries — not just keywords.
-    Use this as the default search tool for any question about products, policies, or processes.
-    Returns top matching passages with source and title metadata.
+    Search indexed product documentation, manuals, and knowledge articles
+    using BGE-M3 semantic embeddings. Use this for: product questions,
+    how-to guides, technical documentation, pricing, specifications.
+    Do NOT use for order/case/serial number lookups — use elasticsearch_keyword_search instead.
     """
     log.info("elasticsearch.semantic_search", query=query, top_k=top_k)
-    store = _get_vector_store()
-    if store is None:
-        return [{"error": "Elasticsearch / BGE-M3 not ready. Check ES_HOST credentials and that the model downloaded correctly.", "query": query}]
 
+    # First try vector store
+    store = _get_vector_store()
+    if store is not None:
+        try:
+            docs = store.similarity_search(query, k=top_k)
+            if docs:
+                return [
+                    {
+                        "content": doc.page_content,
+                        "source": doc.metadata.get("source", "unknown"),
+                        "title": doc.metadata.get("title", ""),
+                        "retrieval_method": "BGE-M3 kNN",
+                    }
+                    for doc in docs
+                ]
+        except Exception as e:
+            log.warning("elasticsearch.semantic_search.vector_failed", error=str(e))
+
+    # Fallback: keyword search on product/doc fields in main index
     try:
-        docs = store.similarity_search(query, k=top_k)
-        return [
-            {
-                "content": doc.page_content,
-                "source": doc.metadata.get("source", "unknown"),
-                "title": doc.metadata.get("title", ""),
-                "retrieval_method": "BGE-M3 kNN",
-            }
-            for doc in docs
-        ]
+        from app.config import settings
+        es = _get_es_client()
+        data_index = getattr(settings, "es_data_index", "next_elastic_test1")
+
+        body = {
+            "size": top_k,
+            "query": {
+                "multi_match": {
+                    "query": query,
+                    "fields": ["TITLE^3", "PRODUCT_TITLE^3", "PRODUCT_DESCRIPTION^2",
+                               "DESCRIPTION", "AEM_PROD_DESC", "KEYWORDS"],
+                    "type": "best_fields",
+                }
+            },
+        }
+        res = es.search(index=data_index, body=body)
+        hits = res["hits"]["hits"]
+        if hits:
+            return [
+                {
+                    "content": h["_source"].get("PRODUCT_DESCRIPTION") or
+                               h["_source"].get("DESCRIPTION") or
+                               h["_source"].get("AEM_PROD_DESC", ""),
+                    "title": h["_source"].get("PRODUCT_TITLE") or h["_source"].get("TITLE", ""),
+                    "source": "elasticsearch",
+                    "retrieval_method": "keyword fallback",
+                }
+                for h in hits
+            ]
     except Exception as e:
-        log.error("elasticsearch.semantic_search.error", error=str(e))
-        return [{"error": str(e), "query": query}]
+        log.error("elasticsearch.semantic_search.fallback_error", error=str(e))
+
+    return [{"message": f"No documentation found for: {query}"}]
 
 
 @tool
 def elasticsearch_ingest_document(title: str, content: str, source: str = "manual") -> dict:
     """
     Index a new document into Elasticsearch using BGE-M3 embeddings.
-    The content is chunked, embedded with BGE-M3, and stored for semantic retrieval.
     Use when the user wants to add a new knowledge article, guide, policy, or FAQ.
-    Returns number of chunks indexed.
     """
     log.info("elasticsearch.ingest", title=title, source=source)
     store = _get_vector_store()
     if store is None:
         return {"error": "Elasticsearch not available.", "indexed": False}
-
     try:
         from langchain_core.documents import Document
         from langchain_text_splitters import RecursiveCharacterTextSplitter
-
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
         chunks = splitter.create_documents(
-            [content],
-            metadatas=[{"title": title, "source": source}],
+            [content], metadatas=[{"title": title, "source": source}]
         )
         store.add_documents(chunks)
-        log.info("elasticsearch.ingest.done", title=title, chunks=len(chunks))
-        return {
-            "indexed": True,
-            "title": title,
-            "source": source,
-            "chunks_stored": len(chunks),
-            "retrieval_method": "BGE-M3 kNN",
-        }
+        return {"indexed": True, "title": title, "chunks_stored": len(chunks)}
     except Exception as e:
         log.error("elasticsearch.ingest.error", error=str(e))
         return {"error": str(e), "indexed": False}

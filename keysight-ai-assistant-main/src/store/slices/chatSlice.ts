@@ -2,7 +2,7 @@
 // Core state for multi-turn conversations.
 // One "session" = one chat thread. Multiple sessions are listed in ChatHistory.
 // The `sendMessage` thunk hits POST /api/chat and auto-records metrics.
-import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { createAction, createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { recordRequest } from "./metricsSlice";
 import { nanoid } from "@reduxjs/toolkit";
 
@@ -22,7 +22,11 @@ export interface ChatMessage {
     text: string;
     citations: string[];
     tool_calls: ToolCall[];
+    /** Reasoning/thinking steps for UI (tool calls, search strategy). */
+    thinkingSteps?: string[];
     latencyMs: number | null;
+    inputTokens?: number | null;
+    outputTokens?: number | null;
     model: string | null;
     timestamp: number;
     error?: boolean;
@@ -36,11 +40,22 @@ export interface ChatSession {
     messages: ChatMessage[];
 }
 
+export type PendingFulfillPayload = {
+    sessionId: string;
+    pendingId: string;
+    userMsgId: string;
+    response: ChatApiResponse;
+};
+
 export interface ChatState {
     sessions: ChatSession[];
     activeSessionId: string;
     status: "idle" | "sending" | "error";
     error: string | null;
+    /** When the last sendMessage request started (for min thinking time). */
+    sentAt: number | null;
+    /** Delayed apply: show response after at least 5s thinking. */
+    pendingFulfill: { payload: PendingFulfillPayload; mergeAt: number } | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -69,11 +84,20 @@ function makeSession(): ChatSession {
 
 const firstSession = makeSession();
 
+// Minimum "thinking" time before showing a response.
+// Set to 0 to surface the backend reply as soon as it arrives.
+const THINKING_MIN_MS = 0;
+
+/** Dispatched after min thinking time to apply delayed chat response. */
+export const mergePendingResponse = createAction("chat/mergePendingResponse");
+
 const initialState: ChatState = {
     sessions: [firstSession],
     activeSessionId: firstSession.id,
     status: "idle",
     error: null,
+    sentAt: null,
+    pendingFulfill: null,
 };
 
 // ── Async thunk — POST /api/chat ─────────────────────────────────────────────
@@ -81,13 +105,18 @@ const initialState: ChatState = {
 interface SendMessageArg {
     sessionId: string;
     message: string;
+    modelProfile?: string;
+    dataSource?: string;
 }
 
 interface ChatApiResponse {
     reply: string;
     citations: string[];
     tool_calls: ToolCall[];
+    thinking_steps?: string[];
     latency_ms: number | null;
+    input_tokens?: number | null;
+    output_tokens?: number | null;
     model: string;
 }
 
@@ -97,7 +126,7 @@ export const sendMessage = createAsyncThunk<
     { rejectValue: string }
 >(
     "chat/sendMessage",
-    async ({ sessionId, message }, { getState, rejectWithValue, dispatch, requestId }) => {
+    async ({ sessionId, message, modelProfile, dataSource }, { getState, rejectWithValue, dispatch, requestId }) => {
         // Build history from current session state AT TIME OF CALL
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const state = (getState() as any).chat as ChatState;
@@ -116,7 +145,13 @@ export const sendMessage = createAsyncThunk<
             const res = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message, history, session_id: sessionId }),
+                body: JSON.stringify({
+                    message,
+                    history,
+                    session_id: sessionId,
+                    model_profile: modelProfile,
+                    data_source: dataSource,
+                }),
             });
             if (!res.ok) {
                 const detail = await res.text().catch(() => `HTTP ${res.status}`);
@@ -182,10 +217,12 @@ const chatSlice = createSlice({
     extraReducers: (builder) => {
         builder
 
-            // PENDING — optimistically add user message (unique id = pending-{requestId})
+            // PENDING — optimistically add user message; record time for min thinking display
             .addCase(sendMessage.pending, (state, { meta }) => {
                 state.status = "sending";
                 state.error = null;
+                state.sentAt = Date.now();
+                state.pendingFulfill = null;
                 const { sessionId, message } = meta.arg;
                 const pendingId = `pending-${meta.requestId}`;
                 const session = state.sessions.find((s) => s.id === sessionId);
@@ -207,8 +244,19 @@ const chatSlice = createSlice({
                 }
             })
 
-            // FULFILLED — promote pending id → permanent id, add assistant reply
+            // FULFILLED — show response after min 5s thinking, or immediately if already past 5s
             .addCase(sendMessage.fulfilled, (state, { payload }) => {
+                const elapsed = state.sentAt != null ? Date.now() - state.sentAt : 0;
+                state.sentAt = null;
+                if (elapsed < THINKING_MIN_MS) {
+                    state.pendingFulfill = {
+                        payload,
+                        mergeAt: Date.now() + (THINKING_MIN_MS - elapsed),
+                    };
+                    state.status = "sending";
+                    return;
+                }
+                state.pendingFulfill = null;
                 state.status = "idle";
                 const { sessionId, pendingId, userMsgId, response } = payload;
                 const session = state.sessions.find((s) => s.id === sessionId);
@@ -221,7 +269,37 @@ const chatSlice = createSlice({
                     text: response.reply,
                     citations: response.citations ?? [],
                     tool_calls: response.tool_calls ?? [],
+                    thinkingSteps: response.thinking_steps ?? [],
                     latencyMs: response.latency_ms,
+                    inputTokens: response.input_tokens ?? null,
+                    outputTokens: response.output_tokens ?? null,
+                    model: response.model,
+                    timestamp: Date.now(),
+                });
+                session.updatedAt = Date.now();
+            })
+
+            // Apply delayed response (after 5s thinking minimum)
+            .addCase(mergePendingResponse, (state) => {
+                const pf = state.pendingFulfill;
+                if (!pf) return;
+                state.pendingFulfill = null;
+                state.status = "idle";
+                const { sessionId, pendingId, userMsgId, response } = pf.payload;
+                const session = state.sessions.find((s) => s.id === sessionId);
+                if (!session) return;
+                const pending = session.messages.find((m) => m.id === pendingId);
+                if (pending) pending.id = userMsgId;
+                session.messages.push({
+                    id: nanoid(),
+                    role: "assistant",
+                    text: response.reply,
+                    citations: response.citations ?? [],
+                    tool_calls: response.tool_calls ?? [],
+                    thinkingSteps: response.thinking_steps ?? [],
+                    latencyMs: response.latency_ms,
+                    inputTokens: response.input_tokens ?? null,
+                    outputTokens: response.output_tokens ?? null,
                     model: response.model,
                     timestamp: Date.now(),
                 });
@@ -230,6 +308,8 @@ const chatSlice = createSlice({
 
             // REJECTED — promote pending id and add error bubble
             .addCase(sendMessage.rejected, (state, { payload, meta }) => {
+                state.sentAt = null;
+                state.pendingFulfill = null;
                 state.status = "error";
                 state.error = payload ?? "Unknown error";
                 const { sessionId } = meta.arg;
@@ -270,5 +350,6 @@ export const selectActiveMessages = (state: RootState) =>
 
 export const selectChatStatus = (state: RootState) => state.chat.status;
 export const selectChatError = (state: RootState) => state.chat.error;
+export const selectPendingFulfill = (state: RootState) => state.chat.pendingFulfill;
 export const selectSessions = (state: RootState) => state.chat.sessions;
 export const selectActiveSessionId = (state: RootState) => state.chat.activeSessionId;

@@ -1,7 +1,7 @@
 // ─── store/slices/modelSlice.ts ───────────────────────────────────────────────
 // Manages LLM / backend health information fetched on app startup.
 // Drives the model badge in the ChatPanel header.
-import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
+import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 export interface ModelState {
     name: string;
@@ -40,7 +40,11 @@ export const fetchModelHealth = createAsyncThunk(
 const modelSlice = createSlice({
     name: "model",
     initialState,
-    reducers: {},
+    reducers: {
+        setModelName(state, action: PayloadAction<string>) {
+            state.name = action.payload;
+        },
+    },
     extraReducers: (builder) => {
         builder
             .addCase(fetchModelHealth.pending, (state) => {
@@ -62,4 +66,5 @@ const modelSlice = createSlice({
     },
 });
 
+export const { setModelName } = modelSlice.actions;
 export const modelReducer = modelSlice.reducer;

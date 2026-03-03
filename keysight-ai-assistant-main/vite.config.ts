@@ -8,6 +8,15 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    // Allow local + reserved ngrok dev domains
+    allowedHosts: [
+      "localhost",
+      ".localhost",
+      "nextbrick.com.ngrok.dev",
+      ".ngrok.dev",
+      ".ngrok-free.dev",
+      ".ngrok.io",
+    ],
     hmr: {
       overlay: false,
     },

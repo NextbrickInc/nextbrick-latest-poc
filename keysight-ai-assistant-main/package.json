@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:ngrok": "vite --host 0.0.0.0 --allowed-hosts nextbrick.com.ngrok.dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",

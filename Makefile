@@ -21,6 +21,9 @@ build:                         ## Build the combined Docker image
 run:                           ## Run the app locally (no Docker needed)
 	@chmod +x start.sh && ./start.sh
 
+run-ngrok:                     ## Run with frontend allowed for ngrok tunnel (use with ngrok http 8080)
+	@chmod +x start.sh && NGROK=1 ./start.sh
+
 docker-run:                    ## Run the combined Docker image (requires Docker)
 	docker run -d \
 	  --name keysight \

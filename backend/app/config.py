@@ -60,10 +60,13 @@ class Settings(BaseSettings):
     # ── Embeddings ────────────────────────────────────────────────────────────
     embedding_model: str = "text-embedding-3-small"
     es_vector_index: str = "keysight-vectors"
+    # Main Elasticsearch data index (orders/cases/assets) — authoritative CSV/JSON snapshot
+    es_data_index: str = "next_elastic_test1"
 
     # ── Ollama embeddings + test index (for elasticsearch_ollama_tool) ─────
     ollama_embedding_model: str = "bge-m3:latest"
-    es_ollama_index: str = "next_elastic_test1"
+    # Vector index that holds embedded docs from backend/docs
+    es_ollama_index: str = "next_elastic_test3"
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     frontend_url: str = "http://localhost:8080"
@@ -78,12 +81,12 @@ class Settings(BaseSettings):
 
     # ── LLM behaviour ─────────────────────────────────────────────────────────
     llm_temperature: float = 0.2
-    llm_max_retries: int = 3
+    llm_max_retries: int = 2
     llm_timeout_seconds: int = 120
 
     # ── Agent dynamic model selection ────────────────────────────────────────
     agent_advanced_message_threshold: int = 10  # use advanced model when messages > this
-    chat_memory_max_messages: int = 20  # in-memory history per session (user+assistant turns)
+    chat_memory_max_messages: int = 10  # in-memory history per session (user+assistant turns)
 
     model_config = SettingsConfigDict(
         env_file=".env",

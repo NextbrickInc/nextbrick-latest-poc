@@ -16,7 +16,7 @@ const STACK = ["gpt-oss:120b-cloud", "bge-m3", "Elasticsearch OSS", "Kafka", "Sp
 
 const Index = () => {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-foreground">
       <Navbar />
 
       <main className="mx-auto w-full max-w-[90rem] px-4 sm:px-6 py-6">

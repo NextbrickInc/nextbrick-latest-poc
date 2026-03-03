@@ -64,7 +64,11 @@ done
 # ── Start frontend ────────────────────────────────────────────────────────────
 log "Starting Vite dev server on http://localhost:8080..."
 cd "$FRONTEND_DIR"
-npm run dev &
+if [ -n "${NGROK:-}" ]; then
+  npm run dev:ngrok &
+else
+  npm run dev &
+fi
 FRONTEND_PID=$!
 ok "Frontend started (PID $FRONTEND_PID)"
 
