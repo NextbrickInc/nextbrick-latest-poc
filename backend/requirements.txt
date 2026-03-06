@@ -17,3 +17,4 @@ structlog
 httpx
 tenacity
 kafka-python>=2.0.2
+cachetools>=5.3.0

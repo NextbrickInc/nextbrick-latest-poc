@@ -154,20 +154,45 @@ export default function ChatPanel() {
     inputRef.current?.focus();
   }, [activeId]);
 
+  // Keep language in sync with Navbar (localStorage is source of truth)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("keysight.language");
+    if (stored && stored !== selectedLanguage) setSelectedLanguage(stored);
+  }, []);
+  const handleStorageSync = () => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("keysight.language");
+    if (stored && stored !== selectedLanguage) setSelectedLanguage(stored);
+  };
+  useEffect(() => {
+    window.addEventListener("storage", handleStorageSync);
+    window.addEventListener("focus", handleStorageSync);
+    return () => {
+      window.removeEventListener("storage", handleStorageSync);
+      window.removeEventListener("focus", handleStorageSync);
+    };
+  }, [selectedLanguage]);
+
   const handleSend = () => {
     const text = inputValue.trim();
     if (!text || isLoading) return;
     setInputValue("");
+    const effectiveLang =
+      (typeof window !== "undefined" ? window.localStorage.getItem("keysight.language") : null) ||
+      selectedLanguage ||
+      "en";
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("keysight.language", selectedLanguage);
+      window.localStorage.setItem("keysight.language", effectiveLang);
     }
+    setSelectedLanguage(effectiveLang);
     dispatch(
       sendMessage({
         sessionId: activeId,
         message: text,
         modelProfile: selectedModelProfile,
         dataSource: selectedSource,
-        language: selectedLanguage,
+        language: effectiveLang,
       }),
     );
   };
@@ -189,6 +214,37 @@ export default function ChatPanel() {
     pendingThinkingSteps.length > 0 ? pendingThinkingSteps[pendingThinkingSteps.length - 1] : null;
 
   const currentModel = MODEL_OPTIONS.find((m) => m.id === selectedModelProfile) ?? MODEL_OPTIONS[0];
+  const selectedLanguageLabel =
+    LANGUAGE_OPTIONS.find((l) => l.id === selectedLanguage)?.label ?? "English";
+  const latestAssistantMessage = [...messages]
+    .reverse()
+    .find(
+      (m) =>
+        m.role === "assistant" &&
+        !m.error &&
+        !!m.text &&
+        !m.text.startsWith("Hi! I'm your Keysight AI Assistant."),
+    );
+
+  const handleLanguageChange = (languageId: string) => {
+    if (languageId === selectedLanguage) return;
+    setSelectedLanguage(languageId);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("keysight.language", languageId);
+    }
+    if (isLoading || !latestAssistantMessage) return;
+    const languageLabel =
+      LANGUAGE_OPTIONS.find((l) => l.id === languageId)?.label ?? "English";
+    dispatch(
+      sendMessage({
+        sessionId: activeId,
+        message: `Translate your previous answer into ${languageLabel}. Keep all technical details unchanged, preserve markdown structure and links, and apply multilingual citation rules exactly.`,
+        modelProfile: selectedModelProfile,
+        dataSource: selectedSource,
+        language: languageId,
+      }),
+    );
+  };
 
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-card overflow-hidden shadow-lg min-w-0">
@@ -299,34 +355,6 @@ export default function ChatPanel() {
                           onClick={() => setSelectedSource(src.id)}
                         >
                           {src.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-muted-foreground">Language:</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 py-0 text-[10px] gap-1"
-                      >
-                        {LANGUAGE_OPTIONS.find((l) => l.id === selectedLanguage)?.label ?? "English"}
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="min-w-[220px]">
-                      <DropdownMenuLabel className="text-[11px]">Language</DropdownMenuLabel>
-                      {LANGUAGE_OPTIONS.map((lang) => (
-                        <DropdownMenuItem
-                          key={lang.id}
-                          className="text-[11px]"
-                          onClick={() => setSelectedLanguage(lang.id)}
-                        >
-                          {lang.label}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
@@ -611,6 +639,34 @@ export default function ChatPanel() {
 
       {/* ── Input area ────────────────────────────────────────────────────── */}
       <div className="border-t border-border p-3 bg-card">
+        <div className="mb-2.5 flex items-center justify-between rounded-md border border-border/70 bg-muted/30 px-2.5 py-1.5">
+          <span className="text-[10px] text-muted-foreground">Response language</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 py-0 text-[10px] gap-1"
+              >
+                {selectedLanguageLabel}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="min-w-[220px]">
+              <DropdownMenuLabel className="text-[11px]">Language</DropdownMenuLabel>
+              {LANGUAGE_OPTIONS.map((lang) => (
+                <DropdownMenuItem
+                  key={lang.id}
+                  className="text-[11px]"
+                  onClick={() => handleLanguageChange(lang.id)}
+                >
+                  {lang.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}

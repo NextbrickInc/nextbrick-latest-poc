@@ -251,7 +251,7 @@ def _build_websearch_body(query: str, size: int, aggs: Optional[dict]) -> dict:
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 @tool
-def elasticsearch_keyword_search(query: str, top_k: int = 5) -> list:
+def elasticsearch_keyword_search(query: str, top_k: int = 5, language: str = "en") -> list:
     """
     Search real Keysight case, order, asset, and product data using an ID-aware strategy.
 
@@ -383,6 +383,23 @@ def elasticsearch_keyword_search(query: str, top_k: int = 5) -> list:
                 "CASE_CHANNEL__C",
                 "FE_NAME__C",
                 "CONTACT_NAME_TEXT_ONLY__C",
+                "DESCRIPTION__C",
+                "CASE_FIRST_ASSIGNED__C",
+                "CASE_OWNER_MANAGER_TEXT__C",
+                "DUE_DATE_AND_TIME__C",
+                "TIME_REMAINING_ALL__C",
+                "TIME_REMAINING_IN_MINUTE__C",
+                "CASE_ASSIGNED_TAT_NUMBER__C",
+                "OF_DAYS_IN_CURRENT_STAGE__C",
+                "ORIGIN",
+                "COPIED_FROM_CASE__C",
+                "CONTACTFAX",
+                "SLA_MET_NOT__C",
+                "FIRST_ASSIGNED__C",
+                "LASTMODIFIEDDATE",
+                "SLA_DUE_DATE__C",
+                "PARENTID",
+                "LOCATION__C",
             ]:
                 val = src.get(f)
                 if val and str(val).strip():
@@ -397,7 +414,7 @@ def elasticsearch_keyword_search(query: str, top_k: int = 5) -> list:
 
 
 @tool
-def elasticsearch_semantic_search(query: str, top_k: int = 5) -> list:
+def elasticsearch_semantic_search(query: str, top_k: int = 5, language: str = "en") -> list:
     """
     Search indexed product documentation, manuals, and knowledge articles
     using BGE-M3 semantic embeddings. Use this for: product questions,
@@ -491,6 +508,7 @@ def elasticsearch_websearch(
     index: Optional[str] = None,
     size: int = 10,
     aggs: Optional[dict] = None,
+    language: str = "en",
 ) -> dict:
     """
     A powerful tool for searching and analysing data within your Elasticsearch cluster.
@@ -514,13 +532,52 @@ def elasticsearch_websearch(
       know the index and fields you want to search on, e.g. user explicitly specified it.
     """
 
-    log.info("elasticsearch.websearch", query=query, index=index, size=size)
+    log.info("elasticsearch.websearch", query=query, index=index, size=size, lang=language)
     try:
         es = _get_es_client()
         target_index = _pick_best_index_for_websearch(es=es, explicit_index=index, query=query)
+        
+        # ── Rule 1 & Rule 2: Two-pass language search ────────────────────────
+        lang = (language or "en").strip().lower()
+        used_fallback = False
+        
+        lang_title_map = {
+            "de": "German", "es": "Spanish", "fr": "French", "zh": "Chinese",
+            "zh-hans": "Chinese (Simplified)", "zh-hant": "Chinese (Traditional)",
+            "ja": "Japanese", "ko": "Korean", "pt": "Portuguese", "it": "Italian",
+        }
+        lang_lower = lang.split("-")[0]
+        language_filter = lang_title_map.get(lang, lang_title_map.get(lang_lower))
+
         body = _build_websearch_body(query=query, size=size, aggs=aggs)
 
-        res = es.search(index=target_index, body=body)
+        if language_filter and lang not in ("en", "english"):
+            # Pass 1: Try user language
+            body_p1 = body.copy()
+            body_p1["query"] = {
+                "bool": {
+                    "must": body["query"],
+                    "filter": [{"term": {"LANGUAGE_TITLE.keyword": language_filter}}]
+                }
+            }
+            res_p1 = es.search(index=target_index, body=body_p1)
+            total_p1 = res_p1.get("hits", {}).get("total", {}).get("value", 0)
+            
+            if total_p1 > 0:
+                res = res_p1
+            else:
+                # Pass 2: Fallback to English (Rule 2)
+                body_p2 = body.copy()
+                body_p2["query"] = {
+                    "bool": {
+                        "must": body["query"],
+                        "filter": [{"term": {"LANGUAGE_TITLE.keyword": "English"}}]
+                    }
+                }
+                res = es.search(index=target_index, body=body_p2)
+                used_fallback = True
+        else:
+            res = es.search(index=target_index, body=body)
         hits = res.get("hits", {}).get("hits", [])
 
         # Special fallback for manual lookup flow when asset_v2 has no data.

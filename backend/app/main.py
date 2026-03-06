@@ -16,6 +16,8 @@ from app.middleware.logging import RequestLoggingMiddleware
 from app.routers import health as health_router
 from app.routers import chat as chat_router
 from app.routers import agent as agent_router
+from app.routers import search as search_router
+from app.routers import user as user_router
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
 def _configure_logging() -> None:
@@ -79,6 +81,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router.router)
     app.include_router(chat_router.router)
     app.include_router(agent_router.router)
+    app.include_router(search_router.router)
+    app.include_router(user_router.router)
 
     return app
 

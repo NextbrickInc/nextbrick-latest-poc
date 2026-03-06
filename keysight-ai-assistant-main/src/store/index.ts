@@ -4,6 +4,7 @@ import { configureStore } from "@reduxjs/toolkit";
 import { chatReducer } from "./slices/chatSlice";
 import { modelReducer } from "./slices/modelSlice";
 import { metricsReducer } from "./slices/metricsSlice";
+import { searchReducer } from "./slices/searchSlice";
 import { chatApi } from "./api/chatApi";
 
 export const store = configureStore({
@@ -11,6 +12,7 @@ export const store = configureStore({
         chat: chatReducer,
         model: modelReducer,
         metrics: metricsReducer,
+        search: searchReducer,
         [chatApi.reducerPath]: chatApi.reducer,
     },
     middleware: (getDefaultMiddleware) =>

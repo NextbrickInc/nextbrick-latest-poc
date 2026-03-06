@@ -152,7 +152,7 @@ export const sendMessage = createAsyncThunk<
                     session_id: sessionId,
                     model_profile: modelProfile,
                     data_source: dataSource,
-                    language,
+                    language: language ?? "en",
                 }),
             });
             if (!res.ok) {

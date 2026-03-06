@@ -7,6 +7,7 @@ from app.tools.salesforce_tool import (
     salesforce_get_product_price,
     salesforce_get_cases_by_account,
     salesforce_get_case,
+    salesforce_get_case_by_number,
     salesforce_create_case,
     salesforce_query,
 )
@@ -33,6 +34,7 @@ ALL_TOOLS = [
     salesforce_get_product_price,
     salesforce_get_cases_by_account,
     salesforce_get_case,
+    salesforce_get_case_by_number,
     salesforce_create_case,
     salesforce_query,
     # Confluence

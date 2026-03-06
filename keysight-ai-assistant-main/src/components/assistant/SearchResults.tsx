@@ -1,6 +1,7 @@
 // ─── components/assistant/SearchResults.tsx ─────────────────────────────────
 // Semantic search results panel with relevance bars and source badges.
-import { ExternalLink, FileText, BarChart3, Code2, Database, BookOpen } from "lucide-react";
+import { ExternalLink, FileText, BarChart3, Code2, Database, BookOpen, Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -54,8 +55,10 @@ const RESULTS = [
 ];
 
 export default function SearchResults() {
+  const navigate = useNavigate();
+
   return (
-    <div className="glass-panel overflow-hidden">
+    <div className="glass-panel overflow-hidden flex flex-col h-full">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold text-foreground">AI Assistance Hub</h3>
@@ -118,6 +121,17 @@ export default function SearchResults() {
           </li>
         ))}
       </ul>
+
+      {/* View more link */}
+      <div className="mt-auto border-t border-border bg-muted/20 p-3">
+        <button
+          onClick={() => navigate("/search")}
+          className="flex w-full items-center justify-center gap-2 rounded-md bg-secondary px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors"
+        >
+          <Search className="h-3.5 w-3.5" />
+          Advanced Global Search
+        </button>
+      </div>
     </div>
   );
 }

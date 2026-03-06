@@ -20,6 +20,9 @@ from app.services.agent_service import invoke_agent, ToolStep
 from app.services.kafka_service import publish_agent_event
 from app.middleware.metrics import metrics_store
 from app.services.manual_fastpath import build_manual_fastpath_reply
+from app.services.product_fastpath import try_product_spec_fastpath
+from app.services.data_fastpath import try_data_fastpath, try_status_intent_fastpath
+from app.services.support_case_fastpath import try_support_case_fastpath
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["agent"])
@@ -31,6 +34,7 @@ class AgentRequest(BaseModel):
     message: str = Field(..., description="The user's message or question")
     history: List[MessageItem] = Field(default_factory=list, description="Previous conversation turns")
     session_id: Optional[str] = Field(None, description="Optional session identifier for logging")
+    language: Optional[str] = Field(None, description="Optional UI language code")
 
 
 class ToolStepResponse(BaseModel):
@@ -73,7 +77,7 @@ def agent(req: AgentRequest) -> AgentResponse:
     bound_log.info("agent.request")
 
     started = time.perf_counter()
-    fast_reply = build_manual_fastpath_reply(req.message)
+    fast_reply = build_manual_fastpath_reply(req.message, req.language)
     if fast_reply:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         return AgentResponse(
@@ -84,11 +88,63 @@ def agent(req: AgentRequest) -> AgentResponse:
             session_id=session_id,
         )
 
+    product_fast = try_product_spec_fastpath(req.message, req.language)
+    if product_fast:
+        reply_text, _ = product_fast
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return AgentResponse(
+            reply=reply_text,
+            tool_steps=[],
+            latency_ms=elapsed_ms,
+            model="product-fastpath-v1",
+            session_id=session_id,
+        )
+
+    intent_fast = try_status_intent_fastpath(req.message)
+    if intent_fast:
+        reply_text, citations_list = intent_fast
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return AgentResponse(
+            reply=reply_text,
+            tool_steps=[ToolStepResponse(tool=c, input={}, output="") for c in citations_list],
+            latency_ms=elapsed_ms,
+            model="status-intent-fastpath-v1",
+            session_id=session_id,
+        )
+
+    case_create_fast = try_support_case_fastpath(req.message, req.language)
+    if case_create_fast:
+        reply_text, citations_list = case_create_fast
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return AgentResponse(
+            reply=reply_text,
+            tool_steps=[ToolStepResponse(tool=c, input={}, output="") for c in citations_list],
+            latency_ms=elapsed_ms,
+            model="support-case-fastpath-v1",
+            session_id=session_id,
+        )
+
+    data_fast = try_data_fastpath(req.message)
+    if data_fast:
+        reply_text, citations_list = data_fast
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return AgentResponse(
+            reply=reply_text,
+            tool_steps=[
+                ToolStepResponse(tool=c, input={}, output="")
+                for c in citations_list
+            ],
+            latency_ms=elapsed_ms,
+            model="data-fastpath-v1",
+            session_id=session_id,
+        )
+
     try:
         result = invoke_agent(
             message=req.message,
             history=req.history,
             session_id=session_id,
+            language=req.language,
         )
     except Exception as exc:
         bound_log.exception("agent.request.error", error=str(exc))

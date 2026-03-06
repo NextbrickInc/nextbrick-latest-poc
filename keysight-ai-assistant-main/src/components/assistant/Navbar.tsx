@@ -12,10 +12,12 @@ import {
   BookOpen,
   Cloud,
   FileText,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppSelector } from "@/store/hooks";
 import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -30,6 +32,7 @@ const NAV_ITEMS = ["Products", "Solutions", "Learn", "Buy", "Support"];
 const Navbar = () => {
   const modelName = useAppSelector((s) => s.model.name);
   const configured = useAppSelector((s) => s.model.configured);
+  const navigate = useNavigate();
 
   const [language, setLanguage] = useState<string>("en");
 
@@ -57,8 +60,11 @@ const Navbar = () => {
       <div className="flex h-16 items-center justify-between px-6">
         {/* Brand + nav */}
         <div className="flex items-center gap-6">
-          {/* Keysight logo wordmark */}
-          <span className="flex items-center gap-1.5 select-none">
+          {/* Keysight logo wordmark — click to go home with chatbot */}
+          <span
+            className="flex items-center gap-1.5 select-none cursor-pointer"
+            onClick={() => navigate("/")}
+          >
             <span className="text-xl font-extrabold tracking-tight text-primary leading-none">
               Keysight
             </span>
@@ -73,6 +79,9 @@ const Navbar = () => {
                 key={item}
                 variant="ghost"
                 size="sm"
+                onClick={() => {
+                  if (item === "Support") navigate("/support/search");
+                }}
                 className="text-sm text-muted-foreground hover:text-foreground h-8"
               >
                 {item}
@@ -254,6 +263,14 @@ const Navbar = () => {
           </Button>
           <Button variant="ghost" size="icon" className="text-muted-foreground h-8 w-8">
             <User className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground h-8 w-8 ml-2"
+            onClick={() => navigate('/search')}
+          >
+            <Search className="h-5 w-5" />
           </Button>
         </div>
       </div>

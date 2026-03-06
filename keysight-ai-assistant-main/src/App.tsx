@@ -8,6 +8,8 @@ import { useAppDispatch } from "@/store/hooks";
 import { fetchModelHealth } from "@/store/slices/modelSlice";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import MainSearchPage from "./pages/MainSearchPage";
+import SupportSearchPage from "./pages/SupportSearchPage";
 
 // ── Boot component: fetches model health once on startup ──────────────────────
 function ModelInitializer() {
@@ -34,6 +36,8 @@ const App = () => (
         <ModelInitializer />
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/search" element={<MainSearchPage />} />
+          <Route path="/support/search" element={<SupportSearchPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

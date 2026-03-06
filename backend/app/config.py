@@ -79,14 +79,19 @@ class Settings(BaseSettings):
     kafka_topic_agent_events: str = "agent.events"
 
 
+    # ── Caching ──────────────────────────────────────────────────────────────
+    cache_ttl_search_seconds: int = 300  # 5 minutes for search/chat cache
+    cache_ttl_faq_seconds: int = 3600    # 1 hour for FAQ cache
+    cache_max_size: int = 1000
+
     # ── LLM behaviour ─────────────────────────────────────────────────────────
     llm_temperature: float = 0.2
     llm_max_retries: int = 2
-    llm_timeout_seconds: int = 120
+    llm_timeout_seconds: int = 120  # allow slow/large models (e.g. 120B) to complete
 
     # ── Agent dynamic model selection ────────────────────────────────────────
     agent_advanced_message_threshold: int = 10  # use advanced model when messages > this
-    chat_memory_max_messages: int = 10  # in-memory history per session (user+assistant turns)
+    chat_memory_max_messages: int = 5  # fewer messages = smaller prompt, faster response
 
     model_config = SettingsConfigDict(
         env_file=".env",

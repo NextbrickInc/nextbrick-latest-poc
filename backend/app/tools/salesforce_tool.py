@@ -291,6 +291,34 @@ def salesforce_get_case(case_id: str) -> dict:
     return result
 
 
+# ── Tool 5b: Get case by CaseNumber ──────────────────────────────────────────
+
+@tool
+def salesforce_get_case_by_number(case_number: str) -> dict:
+    """
+    Get the details of a specific case by its CaseNumber (e.g. 00001027 or 600756).
+    Returns CaseNumber, Status, Subject, Priority, and Description.
+    ALWAYS use this when the user asks for a specific case status by its case number.
+    """
+    log.info("salesforce.get_case_by_number", case_number=case_number)
+    num = case_number.strip()
+    safe = _soql_escape(num)
+    padded = _soql_escape(num.zfill(8))
+    
+    soql = (
+        "SELECT Id, CaseNumber, Status, Subject, Priority, Description FROM Case "
+        f"WHERE CaseNumber = '{safe}' OR CaseNumber = '{padded}'"
+    )
+    result = _sf_request("GET", "query", params={"q": soql})
+    if result is None:
+        return {"error": _get_salesforce_error_message()}
+    
+    records = result.get("records", [])
+    if not records:
+        return {"error": f"No case found for CaseNumber: {case_number}", "records": []}
+    return {"records": records, "totalSize": len(records)}
+
+
 # ── Tool 6: Create case (subject + description; rest default) ──────────────────
 
 # Default AccountId for new cases (configurable via settings if needed)
